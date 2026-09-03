@@ -28,18 +28,18 @@ def test_build_offer_query_gpu_name_uses_underscore_form():
     assert 'gpu_name=RTX_6000-Ada' in terms_ada
 
 
-def test_build_offer_query_geolocation_is_country_not_continent():
-    """`geolocation` must match the country code, not the trailing continent."""
-    terms = _query_terms('1x-RTX_4090-32-65536', 'Oregon, US, NA')
-    assert 'geolocation=US' in terms
-    # The previous `region[-2:]` bug produced the continent code instead.
-    assert 'geolocation=NA' not in terms
+@pytest.mark.parametrize('region', ['Oregon, US, NA', ', US, NA', 'US', ''])
+def test_build_offer_query_does_not_pin_geolocation(region: str):
+    """No clause may carry the catalog row's region.
 
-
-def test_build_offer_query_geolocation_handles_empty_location():
-    """Catalog regions like ", US, NA" (no city) still yield the country."""
-    terms = _query_terms('1x-RTX_4090-32-65536', ', US, NA')
-    assert 'geolocation=US' in terms
+    The catalog keeps one snapshot row per (gpu, count) tuple, so its region is
+    an artifact of when the snapshot was taken. Pinning on it rejects every live
+    offer in any other country: with the pin, one RTX 5090 offer had the disk we
+    asked for; without it, twelve did.
+    """
+    terms = _query_terms('1x-RTX_4090-32-65536', region)
+    assert not [term for term in terms if term.startswith('geolocation')]
+    assert not [term for term in terms if term.startswith('georegion')]
 
 
 def test_build_offer_query_cpu_ram_is_integer_gb_lower_bound():
@@ -85,13 +85,6 @@ def test_build_offer_query_secure_only_adds_datacenter_filters():
     assert 'hosting_type>=1' in secure
 
 
-@pytest.mark.parametrize('region', ['US', ''])
-def test_build_offer_query_region_without_commas(region: str):
-    """A region with no comma falls back to the trailing field."""
-    terms = _query_terms('1x-RTX_4090-32-65536', region)
-    assert f'geolocation={region}' in terms
-
-
 def test_build_offer_query_survives_real_vast_parser():
     """End-to-end check against Vast's own query parser, if installed.
 
@@ -119,7 +112,7 @@ def test_build_offer_query_survives_real_vast_parser():
 
     assert parsed['gpu_name'] == {'eq': 'RTX 4090'}
     assert parsed['num_gpus'] == {'eq': '1'}
-    assert parsed['geolocation'] == {'eq': 'US'}
+    assert 'geolocation' not in parsed
     assert parsed['disk_space'] == {'gte': '100'}
     # cpu_ram is 64 GB, multiplied by 1000 by the parser.
     assert parsed['cpu_ram'] == {'gte': 64000.0}

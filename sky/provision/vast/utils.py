@@ -26,9 +26,9 @@ def _build_offer_query(instance_type: str, region: str, disk_size: int,
 
     e.g. ``1x-RTX_4090-32-65536``.
 
-    ``region`` is the catalog region string. With ``georegion=true`` it looks
-    like ``"Oregon, US, NA"`` (location, 2-letter country code, continent
-    code).
+    ``region`` is accepted for signature compatibility and ignored: the catalog
+    keeps one snapshot row per (gpu, count) tuple, so pinning the query to that
+    row's geolocation rejects every live offer in any other country.
 
     The grammar accepted by Vast's query parser is strict (see
     ``vastai.utils.preprocess_search_query`` / ``vastai.api.query.parse_query``)
@@ -42,10 +42,6 @@ def _build_offer_query(instance_type: str, region: str, disk_size: int,
         the query, so all numeric values must be integers.
       * GPU names use the underscore form (``RTX_4090``). ``parse_query`` turns
         ``_`` back into a space, which is how Vast stores the name internally.
-      * ``geolocation`` matches the 2-letter country code (the second-to-last
-        comma-separated field). The catalog region ends in a continent code, so
-        ``region[-2:]`` would only constrain the continent (e.g. ``EU``) and
-        return a machine in the wrong country.
       * ``cpu_ram`` is multiplied by 1000 by the parser and is therefore
         expressed in GB, not MiB; the instance type encodes MiB, so divide.
     """
@@ -54,17 +50,12 @@ def _build_offer_query(instance_type: str, region: str, disk_size: int,
     gpu_name = '-'.join(parts[1:-2])
     cpu_ram_gb = int(float(parts[-1]) / 1024)
 
-    # The 2-letter country code is the second-to-last comma-separated field
-    # (e.g. "US" in "Oregon, US, NA"); fall back to the trailing field if the
-    # region is not in the expected catalog format.
-    region_fields = [field.strip() for field in region.split(',')]
-    country_code = (region_fields[-2]
-                    if len(region_fields) >= 2 else region_fields[-1])
+    # `region` is deliberately unused: pinning the query to the catalog row's
+    # geolocation rejects every live offer outside that one country (#9527).
+    del region
 
     query = [
         'chunked=true',
-        'georegion=true',
-        f'geolocation={country_code}',
         f'disk_space>={disk_size}',
         f'num_gpus={num_gpus}',
         f'gpu_name={gpu_name}',
