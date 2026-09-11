@@ -14,6 +14,11 @@ from sky.adaptors import vast
 
 logger = sky_logging.init_logger(__name__)
 
+# Minimum rental window, in days, a host must commit to for its offer to be
+# considered. Vast stops the instance when that window ends, mid-job and without
+# warning: an offer committing to 1.8 days cut a 42-hour run short.
+_MIN_RENTAL_DAYS = 3
+
 
 def _build_offer_query(instance_type: str, region: str, disk_size: int,
                        secure_only: bool) -> str:
@@ -44,6 +49,9 @@ def _build_offer_query(instance_type: str, region: str, disk_size: int,
         ``_`` back into a space, which is how Vast stores the name internally.
       * ``cpu_ram`` is multiplied by 1000 by the parser and is therefore
         expressed in GB, not MiB; the instance type encodes MiB, so divide.
+      * ``duration`` is the host's advertised rental window and is read in
+        days. Seconds parse fine and match nothing, so the pool silently
+        empties instead of erroring.
     """
     parts = instance_type.split('-')
     num_gpus = int(parts[0].replace('x', ''))
@@ -60,6 +68,7 @@ def _build_offer_query(instance_type: str, region: str, disk_size: int,
         f'num_gpus={num_gpus}',
         f'gpu_name={gpu_name}',
         f'cpu_ram>={cpu_ram_gb}',
+        f'duration>={_MIN_RENTAL_DAYS}',
     ]
     if secure_only:
         query.append('datacenter=true')

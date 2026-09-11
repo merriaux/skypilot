@@ -116,3 +116,19 @@ def test_build_offer_query_survives_real_vast_parser():
     assert parsed['disk_space'] == {'gte': '100'}
     # cpu_ram is 64 GB, multiplied by 1000 by the parser.
     assert parsed['cpu_ram'] == {'gte': 64000.0}
+    # The parser reads days and stores seconds: 3 -> 259200.
+    assert parsed['duration'] == {
+        'gte': float(utils._MIN_RENTAL_DAYS) * 86400
+    }
+
+
+def test_build_offer_query_requires_a_minimum_rental_window():
+    """Hosts that commit to a short window stop the instance mid-job.
+
+    Vast stops, without warning, when the advertised window ends; one offer
+    committing to 1.8 days ended a 42-hour run.
+    """
+    terms = _query_terms('1x-RTX_4090-32-65536', 'Oregon, US, NA')
+    assert f'duration>={utils._MIN_RENTAL_DAYS}' in terms
+    # Days, not seconds: seconds parse fine and match no offer at all.
+    assert utils._MIN_RENTAL_DAYS < 365
