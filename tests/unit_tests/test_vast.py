@@ -132,3 +132,40 @@ def test_build_offer_query_requires_a_minimum_rental_window():
     assert f'duration>={utils._MIN_RENTAL_DAYS}' in terms
     # Days, not seconds: seconds parse fine and match no offer at all.
     assert utils._MIN_RENTAL_DAYS < 365
+
+
+def test_register_ssh_key_attaches_to_the_instance(monkeypatch):
+    """The key must be registered with Vast, not only appended by onstart.
+
+    Vast owns the instance's authorized set and drops what it did not register,
+    which strands a running cluster with `Permission denied (publickey)`.
+    """
+    calls = []
+
+    class _Client:
+
+        def attach_ssh(self, instance_id, ssh_key):
+            calls.append((instance_id, ssh_key))
+            return {'success': True}
+
+    monkeypatch.setattr(utils.vast, 'vast', lambda: _Client())
+    utils._register_ssh_key(42, '  ssh-rsa AAAA  ')
+    assert calls == [(42, 'ssh-rsa AAAA')]
+
+
+def test_register_ssh_key_warns_instead_of_raising(monkeypatch, caplog):
+    """A launch that works now must not abort, but the failure must be visible.
+
+    Registering on the account fails silently for team API keys (upstream
+    #9631); repeating that mistake here would hide the same outage.
+    """
+
+    class _Client:
+
+        def attach_ssh(self, instance_id, ssh_key):
+            raise RuntimeError('boom')
+
+    monkeypatch.setattr(utils.vast, 'vast', lambda: _Client())
+    with caplog.at_level('WARNING'):
+        utils._register_ssh_key(42, 'ssh-rsa AAAA')
+    assert 'boom' in caplog.text
