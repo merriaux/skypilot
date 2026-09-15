@@ -19,6 +19,11 @@ logger = sky_logging.init_logger(__name__)
 # warning: an offer committing to 1.8 days cut a 42-hour run short.
 _MIN_RENTAL_DAYS = 3
 
+# Minimum CUDA the host's driver must support. An `-auto` image tag adapts to
+# the host instead of rejecting it, so a 12.9 box silently downgrades the image
+# and the job dies at the first .cuda() call.
+_MIN_CUDA = 13
+
 
 def _build_offer_query(instance_type: str, region: str, disk_size: int,
                        secure_only: bool) -> str:
@@ -52,6 +57,9 @@ def _build_offer_query(instance_type: str, region: str, disk_size: int,
       * ``duration`` is the host's advertised rental window and is read in
         days. Seconds parse fine and match nothing, so the pool silently
         empties instead of erroring.
+      * ``cuda_max_good`` takes an integer major version. Trust the lowest
+        value in the results, not the count: ``>=12`` returns nothing at all
+        while ``>=13`` works.
     """
     parts = instance_type.split('-')
     num_gpus = int(parts[0].replace('x', ''))
@@ -69,6 +77,7 @@ def _build_offer_query(instance_type: str, region: str, disk_size: int,
         f'gpu_name={gpu_name}',
         f'cpu_ram>={cpu_ram_gb}',
         f'duration>={_MIN_RENTAL_DAYS}',
+        f'cuda_max_good>={_MIN_CUDA}',
     ]
     if secure_only:
         query.append('datacenter=true')

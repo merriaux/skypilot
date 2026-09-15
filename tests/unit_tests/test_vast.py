@@ -120,6 +120,7 @@ def test_build_offer_query_survives_real_vast_parser():
     assert parsed['duration'] == {
         'gte': float(utils._MIN_RENTAL_DAYS) * 86400
     }
+    assert parsed['cuda_max_good'] == {'gte': str(utils._MIN_CUDA)}
 
 
 def test_build_offer_query_requires_a_minimum_rental_window():
@@ -169,3 +170,15 @@ def test_register_ssh_key_warns_instead_of_raising(monkeypatch, caplog):
     with caplog.at_level('WARNING'):
         utils._register_ssh_key(42, 'ssh-rsa AAAA')
     assert 'boom' in caplog.text
+
+
+def test_build_offer_query_requires_a_driver_new_enough():
+    """An `-auto` image tag downgrades to fit the host rather than refusing it.
+
+    A box capped at CUDA 12.9 then runs a 12.x image, and the job dies on its
+    first .cuda() call with "The NVIDIA driver on your system is too old".
+    """
+    terms = _query_terms('1x-RTX_5090-32-65536', 'Oregon, US, NA')
+    assert f'cuda_max_good>={utils._MIN_CUDA}' in terms
+    # An integer major version: the decimal forms are not worth the risk.
+    assert isinstance(utils._MIN_CUDA, int)
